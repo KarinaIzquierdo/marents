@@ -7,6 +7,7 @@ use App\Http\Requests\Auth\LoginRequest;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\View\View;
 
 class AuthenticatedSessionController extends Controller
@@ -56,5 +57,31 @@ public function store(Request $request): RedirectResponse
         $request->session()->regenerateToken();
 
         return redirect('/');
+    }
+
+    /**
+     * Handle an API authentication request.
+     */
+    public function loginApi(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email',
+            'password' => 'required',
+        ]);
+
+        $user = \App\Models\User::where('email', $request->email)->first();
+
+        if (!$user || !Hash::check($request->password, $user->password)) {
+            return response()->json([
+                'message' => 'Credenciales incorrectas'
+            ], 401);
+        }
+
+        // Aquí podrías generar un token si usaras Sanctum, 
+        // por ahora devolvemos los datos del usuario
+        return response()->json([
+            'user' => $user,
+            'message' => 'Login exitoso'
+        ]);
     }
 }

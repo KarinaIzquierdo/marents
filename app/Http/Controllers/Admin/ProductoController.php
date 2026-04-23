@@ -24,7 +24,7 @@ class ProductoController extends Controller
             'variaciones.talla',
             'variaciones.colorPrimario',
             'variaciones.colorSecundario'
-        ])->get(); // 👉 luego puedes usar paginate()
+        ])->get();
 
         $categorias = Categoria::all();
         $tallas = Talla::all();
@@ -39,7 +39,6 @@ class ProductoController extends Controller
     //  CREAR PRODUCTO
     public function store(Request $request)
     {
-        // ✅ VALIDACIÓN
         $request->validate([
             'modelo_nombre' => 'required|string',
             'categoria_id' => 'required',
@@ -50,36 +49,30 @@ class ProductoController extends Controller
             'stock' => 'required|numeric|min:0'
         ]);
 
-        //  MODELO
         $modelo = Modelo::create([
             'nombre' => $request->modelo_nombre,
             'categoria_id' => $request->categoria_id
         ]);
 
-        //  PRODUCTO
         $producto = Producto::create([
             'modelo_id' => $modelo->id
         ]);
 
-        //  COLORES
         $colorPrimario = Color::firstOrCreate([
             'nombre' => $request->color_primario
         ]);
 
         $colorSecundario = null;
-
         if ($request->color_secundario) {
             $colorSecundario = Color::firstOrCreate([
                 'nombre' => $request->color_secundario
             ]);
         }
 
-        //  TALLA
         $talla = Talla::firstOrCreate([
             'numero' => $request->talla_numero
         ]);
 
-        //  VARIACIÓN (SIN DUPLICADOS)
         ProductoVariacion::updateOrCreate(
             [
                 'producto_id' => $producto->id,
@@ -96,10 +89,8 @@ class ProductoController extends Controller
             ]
         );
 
-        //  IMAGEN
         if ($request->hasFile('imagen')) {
             $path = $request->file('imagen')->store('productos', 'public');
-
             ProductoImagen::create([
                 'producto_id' => $producto->id,
                 'url' => 'storage/' . $path
@@ -109,10 +100,8 @@ class ProductoController extends Controller
         return back()->with('success', 'Producto creado');
     }
 
-    //  AGREGAR STOCK A PRODUCTO
     public function agregarStockProducto(Request $request)
     {
-        // ✅ VALIDACIÓN
         $request->validate([
             'producto_id' => 'required',
             'talla_id' => 'required',
@@ -124,160 +113,118 @@ class ProductoController extends Controller
             ->first();
 
         if ($variacion) {
-
-            // ✔ SUMAR STOCK
             $variacion->increment('stock', $request->cantidad);
-
         } else {
-
-            //  SI NO EXISTE → CREAR
-
-            $color = Color::first();
-
-            if (!$color) {
-                $color = Color::create(['nombre' => 'Default']);
-            }
-
+            $color = Color::first() ?: Color::create(['nombre' => 'Default']);
             ProductoVariacion::create([
                 'producto_id' => $request->producto_id,
                 'talla_id' => $request->talla_id,
                 'color_id' => $color->id,
-                'color_secundario_id' => null,
+                'stock' => $request->cantidad,
                 'precio' => 0,
                 'costo' => 0,
-                'stock' => $request->cantidad,
-                'tiene_descuento' => 0,
-                'valor_descuento' => null
+                'tiene_descuento' => 0
             ]);
         }
 
         return back()->with('success', 'Stock actualizado');
     }
 
-    //  OBTENER MODELOS POR CATEGORIA
-public function getModelos($categoriaId)
-{
-    return Modelo::where('categoria_id', $categoriaId)->get();
-}
-
-//  OBTENER TALLAS POR MODELO
-public function getTallas($modeloId)
-{
-    return Talla::select('id', 'numero')
-        ->orderBy('numero')
-        ->get();
-}
-public function getProductoInfo($modeloId)
-{
-    $producto = Producto::where('modelo_id', $modeloId)
-        ->with([
-            'imagen',
-            'variaciones.talla', // 👈 FALTABA ESTO
-            'variaciones.colorPrimario',
-            'variaciones.colorSecundario'
-        ])
-        ->first();
-
-    return response()->json($producto);
-}
-// OBTENER COLORES POR MODELO
-public function getColores($modeloId)
-{
-    $variaciones = ProductoVariacion::whereHas('producto', function ($q) use ($modeloId) {
-        $q->where('modelo_id', $modeloId);
-    })
-    ->with(['colorPrimario', 'colorSecundario'])
-    ->get();
-
-    // 🔥 PRIMARIOS
-    $primarios = $variaciones
-        ->pluck('colorPrimario')
-        ->filter()
-        ->unique('id')
-        ->values();
-
-    // 🔥 SECUNDARIOS
-    $secundarios = $variaciones
-        ->pluck('colorSecundario')
-        ->filter()
-        ->unique('id')
-        ->values();
-
-    return response()->json([
-        'primarios' => $primarios,
-        'secundarios' => $secundarios
-    ]);
-}
-
-public function agregarStockGlobal(Request $request)
-{
-    $request->validate([
-        'variacion_id' => 'required',
-        'cantidad' => 'required|numeric|min:1'
-    ]);
-
-    $variacion = ProductoVariacion::find($request->variacion_id);
-
-    if (!$variacion) {
-        return back()->with('error', 'Variación no encontrada');
+    public function getModelos($categoriaId)
+    {
+        return Modelo::where('categoria_id', $categoriaId)->get();
     }
 
-    $variacion->increment('stock', $request->cantidad);
+    public function getTallas($modeloId)
+    {
+        return Talla::select('id', 'numero')->orderBy('numero')->get();
+    }
 
-    return back()->with('success', 'Stock actualizado correctamente');
+    public function getProductoInfo($modeloId)
+    {
+        $producto = Producto::where('modelo_id', $modeloId)
+            ->with([
+                'imagen',
+                'variaciones.talla',
+                'variaciones.colorPrimario',
+                'variaciones.colorSecundario'
+            ])
+            ->first();
+
+        return response()->json($producto);
+    }
+
+    public function getColores($modeloId)
+    {
+        $variaciones = ProductoVariacion::whereHas('producto', function ($q) use ($modeloId) {
+            $q->where('modelo_id', $modeloId);
+        })
+        ->with(['colorPrimario', 'colorSecundario'])
+        ->get();
+
+        $primarios = $variaciones->pluck('colorPrimario')->filter()->unique('id')->values();
+        $secundarios = $variaciones->pluck('colorSecundario')->filter()->unique('id')->values();
+
+        return response()->json([
+            'primarios' => $primarios,
+            'secundarios' => $secundarios
+        ]);
+    }
+
+    public function agregarStockGlobal(Request $request)
+    {
+        $request->validate([
+            'variacion_id' => 'required',
+            'cantidad' => 'required|numeric|min:1'
+        ]);
+
+        $variacion = ProductoVariacion::find($request->variacion_id);
+        if (!$variacion) {
+            return back()->with('error', 'Variación no encontrada');
+        }
+
+        $variacion->increment('stock', $request->cantidad);
+        return back()->with('success', 'Stock actualizado correctamente');
+    }
+
+    public function show($id)
+    {
+        $producto = Producto::with([
+            'modelo.categoria',
+            'imagen',
+            'variaciones.talla',
+            'variaciones.colorPrimario'
+        ])->findOrFail($id);
+
+        $variaciones = $producto->variaciones;
+        $colores = $variaciones->pluck('colorPrimario')->filter()->unique('id')->values();
+        $tallas = $variaciones->pluck('talla.numero')->unique()->sort()->values();
+        $precio = $variaciones->avg('precio');
+
+        return view('producto.show', compact('producto', 'colores', 'tallas', 'precio'));
+    }
+
+    public function indexApi()
+    {
+        $productos = Producto::with([
+            'modelo.categoria',
+            'imagen',
+            'variaciones.talla',
+            'variaciones.colorPrimario',
+            'variaciones.colorSecundario'
+        ])->get();
+
+        // Transformamos la colección para que 'imagen' sea un string con la URL
+        $productosTransformed = $productos->map(function ($producto) {
+            return [
+                'id' => $producto->id,
+                'modelo' => $producto->modelo,
+                'imagen' => $producto->imagen ? str_replace('127.0.0.1', '10.0.2.2', asset($producto->imagen->url)) : null,
+                'estado' => $producto->estado,
+                'variaciones' => $producto->variaciones
+            ];
+        });
+
+        return response()->json($productosTransformed);
+    }
 }
-
-public function show($id)
-{
-    $producto = Producto::with([
-        'modelo.categoria',
-        'imagen',
-        'variaciones.talla',
-        'variaciones.colorPrimario'
-    ])->findOrFail($id);
-
-    $variaciones = $producto->variaciones;
-
-    // 🔥 COLORES ÚNICOS
-    $colores = $variaciones
-        ->pluck('colorPrimario')
-        ->filter()
-        ->unique('id')
-        ->values();
-
-    // 🔥 TALLAS (TODAS)
-    $tallas = $variaciones
-        ->pluck('talla.numero')
-        ->unique()
-        ->sort()
-        ->values();
-
-    // 🔥 PRECIO (puedes mejorar luego)
-    $precio = $variaciones->avg('precio');
-
-    return view('producto.show', compact(
-        'producto',
-        'colores',
-        'tallas',
-        'precio'
-    ));
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-}
-
-
-
